@@ -25,26 +25,37 @@ socketServer.registerSocketServer(server);
 
 const { MONGO_URI } = process.env;
 
-if (!MONGO_URI) {
-  console.error(
-    "Missing MONGO_URI environment variable. Copy .env.example to .env and provide a valid MongoDB connection string."
-  );
-  process.exit(1);
-}
+server.listen(PORT, () => {
+  console.log(`Server is listening on ${PORT}`);
+});
 
-mongoose
-  .connect(MONGO_URI, { serverSelectionTimeoutMS: 5000 })
-  .then(() => {
-    server.listen(PORT, () => {
-      console.log(`Server is listening on ${PORT}`);
-    });
-  })
-  .catch((err) => {
-    console.error("database connection failed. Server not started");
-    if (err?.name === "MongooseServerSelectionError") {
+if (!MONGO_URI) {
+  console.warn(
+    "Missing MONGO_URI environment variable. Copy .env.example to .env and provide a valid MongoDB connection string. Database connection skipped."
+  );
+} else {
+  const connectToDatabase = async (attempt = 1) => {
+    try {
+      await mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 5000 });
+      console.log("Connected to MongoDB");
+    } catch (err) {
       console.error(
-        "Unable to connect to MongoDB cluster. If you're using MongoDB Atlas, ensure your current IP is whitelisted or switch to a local MongoDB instance."
+        `Database connection attempt ${attempt} failed. Server is still running.`
       );
+      if (err?.name === "MongooseServerSelectionError") {
+        console.error(
+          "Unable to connect to MongoDB cluster. If you're using MongoDB Atlas, ensure your current IP is whitelisted or switch to a local MongoDB instance."
+        );
+      }
+      console.error(err);
+
+      const retryDelayMs = Math.min(30000, attempt * 5000);
+      console.log(
+        `Retrying database connection in ${retryDelayMs / 1000} seconds...`
+      );
+      setTimeout(() => connectToDatabase(attempt + 1), retryDelayMs);
     }
-    console.error(err);
-  });
+  };
+
+  connectToDatabase();
+}
